@@ -319,6 +319,7 @@
         let currentResultId = null;
         let ongoingRequest = null; // 跟踪正在进行的API请求
         let lastTranslatedText = ''; // 记录上次翻译的文本
+        let lastProcessedIndex = 0; // 跟踪已处理的结果索引
         const MAX_CHARS_PER_SEGMENT = 500; // 每段最大字符数
         
         const apiKeyInput = document.getElementById('apiKey');
@@ -414,6 +415,7 @@
                 isRecognizing = true;
                 accumulatedText = '';
                 lastTranslatedText = '';
+                lastProcessedIndex = 0; // 重置处理索引
                 updateStatus('listening', '🎤 正在监听...');
                 startBtn.style.display = 'none';
                 stopBtn.style.display = 'block';
@@ -455,11 +457,12 @@
                 let interimTranscript = '';
                 let finalTranscript = '';
 
-                // 获取所有最终确定的文本
-                for (let i = event.resultIndex; i < event.results.length; i++) {
+                // 从lastProcessedIndex开始处理（避免重复处理旧结果）
+                for (let i = lastProcessedIndex; i < event.results.length; i++) {
                     const transcript = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
                         finalTranscript += transcript + ' ';
+                        lastProcessedIndex = i + 1; // 更新已处理索引
                     } else {
                         interimTranscript += transcript;
                     }
@@ -468,7 +471,7 @@
                 // 更新累积文本（只添加新的最终文本）
                 if (finalTranscript) {
                     accumulatedText += finalTranscript;
-                    console.log('累积文本长度:', accumulatedText.length);
+                    console.log('新增文本:', finalTranscript.substring(0, 50), '累积长度:', accumulatedText.length);
                 }
 
                 // 实时显示（累积文本 + 临时文本）
@@ -487,12 +490,15 @@
 
         // 创建新段落
         function createNewSegment() {
+            console.log('创建新段落，当前累积文本长度:', accumulatedText.length);
+            
             // 如果当前段落有内容且未翻译，先翻译
-            if (accumulatedText.trim() && accumulatedText !== lastTranslatedText) {
+            if (accumulatedText.trim() && accumulatedText.length > lastTranslatedText.length) {
                 translateText(accumulatedText);
+                lastTranslatedText = accumulatedText;
             }
             
-            // 重置累积文本
+            // 重置累积文本（但保持lastProcessedIndex，因为识别没有重启）
             accumulatedText = '';
             lastTranslatedText = '';
             
@@ -500,16 +506,7 @@
             currentResultId = Date.now();
             addResult(currentResultId, '', '等待翻译...');
             
-            console.log('新段落已创建');
-            
-            // 重启语音识别以重置resultIndex
-            if (recognition && isRecognizing) {
-                try {
-                    recognition.stop(); // 会触发onend，自动重启
-                } catch (e) {
-                    console.error('重启识别失败:', e);
-                }
-            }
+            console.log('新段落已创建，ID:', currentResultId, '继续从索引', lastProcessedIndex, '处理');
         }
 
         // 开始定时翻译
@@ -517,8 +514,9 @@
             const interval = parseInt(translateIntervalSelect.value) * 1000;
             
             translationTimer = setInterval(async () => {
-                // 只翻译新增的内容（避免重复翻译）
-                if (accumulatedText.trim() && accumulatedText !== lastTranslatedText) {
+                // 如果有新内容需要翻译（文本长度增加了）
+                if (accumulatedText.trim() && accumulatedText.length > lastTranslatedText.length) {
+                    console.log(`定时翻译：当前${accumulatedText.length}字符，上次翻译${lastTranslatedText.length}字符`);
                     await translateText(accumulatedText);
                     lastTranslatedText = accumulatedText;
                 }
