@@ -499,7 +499,7 @@
             const formData = new FormData();
             formData.append('file', audioBlob, 'audio.webm');
             formData.append('model', 'whisper-1');
-            formData.append('language', 'auto'); // 自动检测语言
+            // 不指定language参数，让Whisper自动检测语言
 
             const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
                 method: 'POST',
