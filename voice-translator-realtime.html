@@ -455,6 +455,7 @@
                 let interimTranscript = '';
                 let finalTranscript = '';
 
+                // 获取所有最终确定的文本
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     const transcript = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
@@ -464,21 +465,22 @@
                     }
                 }
 
-                // 更新累积文本
+                // 更新累积文本（只添加新的最终文本）
                 if (finalTranscript) {
                     accumulatedText += finalTranscript;
+                    console.log('累积文本长度:', accumulatedText.length);
                 }
 
                 // 实时显示（累积文本 + 临时文本）
                 const displayText = accumulatedText + interimTranscript;
                 if (displayText.trim()) {
                     updateResultOriginal(currentResultId, displayText);
-                    
-                    // 检查是否超过字符限制，如果超过则创建新段落
-                    if (accumulatedText.length >= MAX_CHARS_PER_SEGMENT) {
-                        console.log(`当前段落已达 ${accumulatedText.length} 字符，创建新段落`);
-                        createNewSegment();
-                    }
+                }
+                
+                // 检查是否超过字符限制（只在有最终文本时检查）
+                if (finalTranscript && accumulatedText.length >= MAX_CHARS_PER_SEGMENT) {
+                    console.log(`当前段落已达 ${accumulatedText.length} 字符，创建新段落`);
+                    createNewSegment();
                 }
             };
         }
@@ -499,6 +501,15 @@
             addResult(currentResultId, '', '等待翻译...');
             
             console.log('新段落已创建');
+            
+            // 重启语音识别以重置resultIndex
+            if (recognition && isRecognizing) {
+                try {
+                    recognition.stop(); // 会触发onend，自动重启
+                } catch (e) {
+                    console.error('重启识别失败:', e);
+                }
+            }
         }
 
         // 开始定时翻译
