@@ -688,7 +688,12 @@
             translationTimer = setInterval(() => {
                 if (currentSegmentText.trim() && isRecognizing) {
                     console.log('定时翻译，文本长度:', currentSegmentText.length);
+                    // 翻译当前文本
                     translateText(currentSegmentText, currentResultId);
+                    // 创建新段落
+                    currentResultId = Date.now();
+                    addResult(currentResultId, '', '等待翻译...');
+                    currentSegmentText = '';
                 }
             }, interval);
         }
