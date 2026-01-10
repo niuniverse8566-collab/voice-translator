@@ -318,6 +318,8 @@
         let translationTimer = null;
         let currentResultId = null;
         let ongoingRequest = null; // 跟踪正在进行的API请求
+        let lastTranslatedText = ''; // 记录上次翻译的文本
+        const MAX_CHARS_PER_SEGMENT = 500; // 每段最大字符数
         
         const apiKeyInput = document.getElementById('apiKey');
         const translateIntervalSelect = document.getElementById('translateInterval');
@@ -411,6 +413,7 @@
             recognition.onstart = () => {
                 isRecognizing = true;
                 accumulatedText = '';
+                lastTranslatedText = '';
                 updateStatus('listening', '🎤 正在监听...');
                 startBtn.style.display = 'none';
                 stopBtn.style.display = 'block';
@@ -470,8 +473,32 @@
                 const displayText = accumulatedText + interimTranscript;
                 if (displayText.trim()) {
                     updateResultOriginal(currentResultId, displayText);
+                    
+                    // 检查是否超过字符限制，如果超过则创建新段落
+                    if (accumulatedText.length >= MAX_CHARS_PER_SEGMENT) {
+                        console.log(`当前段落已达 ${accumulatedText.length} 字符，创建新段落`);
+                        createNewSegment();
+                    }
                 }
             };
+        }
+
+        // 创建新段落
+        function createNewSegment() {
+            // 如果当前段落有内容且未翻译，先翻译
+            if (accumulatedText.trim() && accumulatedText !== lastTranslatedText) {
+                translateText(accumulatedText);
+            }
+            
+            // 重置累积文本
+            accumulatedText = '';
+            lastTranslatedText = '';
+            
+            // 创建新的结果卡片
+            currentResultId = Date.now();
+            addResult(currentResultId, '', '等待翻译...');
+            
+            console.log('新段落已创建');
         }
 
         // 开始定时翻译
@@ -479,8 +506,10 @@
             const interval = parseInt(translateIntervalSelect.value) * 1000;
             
             translationTimer = setInterval(async () => {
-                if (accumulatedText.trim()) {
+                // 只翻译新增的内容（避免重复翻译）
+                if (accumulatedText.trim() && accumulatedText !== lastTranslatedText) {
                     await translateText(accumulatedText);
+                    lastTranslatedText = accumulatedText;
                 }
             }, interval);
         }
