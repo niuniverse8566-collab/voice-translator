@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时语音翻译 - ElevenLabs STT</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+            margin-top: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .settings {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .control-panel {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        #startBtn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        #startBtn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        #startBtn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #stopBtn {
+            background: #e74c3c;
+            color: white;
+            display: none;
+        }
+
+        #stopBtn:hover {
+            background: #c0392b;
+            transform: translateY(-2px);
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .status.listening {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+
+        .status.processing {
+            background: #fff3cd;
+            color: #856404;
+            border: 2px solid #ffeaa7;
+        }
+
+        .status.stopped {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+
+        .status.idle {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 2px solid #bee5eb;
+        }
+
+        .results {
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #fafafa;
+            border-radius: 10px;
+        }
+
+        .result-item {
+            background: white;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result-original {
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .result-label {
+            font-size: 12px;
+            color: #888;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .result-text {
+            font-size: 16px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .result-translation {
+            margin-top: 10px;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #f5c6cb;
+            white-space: pre-line;
+            line-height: 1.6;
+        }
+
+        .pulse {
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .recording-indicator {
+            display: none;
+            width: 20px;
+            height: 20px;
+            background: #e74c3c;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+            margin: 0 auto 10px;
+        }
+
+        .recording-indicator.active {
+            display: block;
+        }
+
+        @keyframes blink {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .control-panel {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 实时语音翻译</h1>
+        <div class="subtitle">ElevenLabs Speech-to-Text + GPT-4o 翻译</div>
+        
+        <div class="settings">
+            <div class="input-group">
+                <label for="elevenlabsKey">ElevenLabs API Key:</label>
+                <input type="password" id="elevenlabsKey" placeholder="your-elevenlabs-api-key">
+            </div>
+
+            <div class="input-group">
+                <label for="openaiKey">OpenAI API Key:</label>
+                <input type="password" id="openaiKey" placeholder="sk-...">
+            </div>
+
+            <div class="input-group">
+                <label for="translateInterval">翻译间隔 (秒):</label>
+                <select id="translateInterval">
+                    <option value="3">3 秒</option>
+                    <option value="5" selected>5 秒</option>
+                    <option value="8">8 秒</option>
+                    <option value="10">10 秒</option>
+                    <option value="15">15 秒</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label for="languageCode">源语言 (可选):</label>
+                <select id="languageCode">
+                    <option value="">自动检测</option>
+                    <option value="en">英语</option>
+                    <option value="zh">中文</option>
+                    <option value="es">西班牙语</option>
+                    <option value="fr">法语</option>
+                    <option value="de">德语</option>
+                    <option value="ja">日语</option>
+                    <option value="ko">韩语</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <button id="startBtn">开始识别</button>
+            <button id="stopBtn">停止识别</button>
+        </div>
+
+        <div class="recording-indicator" id="recordingIndicator"></div>
+        <div id="status" class="status idle">准备就绪</div>
+
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        // 初始化变量
+        let websocket = null;
+        let audioContext = null;
+        let scriptProcessor = null;
+        let mediaStream = null;
+        let isRecognizing = false;
+        let currentSegmentText = '';
+        let translationTimer = null;
+        let currentResultId = null;
+        let ongoingRequest = null;
+        let sessionId = null;
+        const MAX_CHARS_PER_SEGMENT = 500;
+        
+        const elevenlabsKeyInput = document.getElementById('elevenlabsKey');
+        const openaiKeyInput = document.getElementById('openaiKey');
+        const translateIntervalSelect = document.getElementById('translateInterval');
+        const languageCodeSelect = document.getElementById('languageCode');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDiv = document.getElementById('status');
+        const resultsDiv = document.getElementById('results');
+        const recordingIndicator = document.getElementById('recordingIndicator');
+
+        // 从localStorage加载API Keys
+        if (localStorage.getItem('elevenlabs_api_key')) {
+            elevenlabsKeyInput.value = localStorage.getItem('elevenlabs_api_key');
+        }
+        if (localStorage.getItem('openai_api_key')) {
+            openaiKeyInput.value = localStorage.getItem('openai_api_key');
+        }
+
+        elevenlabsKeyInput.addEventListener('change', () => {
+            localStorage.setItem('elevenlabs_api_key', elevenlabsKeyInput.value);
+        });
+        openaiKeyInput.addEventListener('change', () => {
+            localStorage.setItem('openai_api_key', openaiKeyInput.value);
+        });
+
+        // 完全停止所有活动
+        function completeShutdown() {
+            console.log('执行完全关闭...');
+            isRecognizing = false;
+            
+            // 停止 WebSocket
+            if (websocket) {
+                try {
+                    websocket.close();
+                    websocket = null;
+                } catch (e) {
+                    console.log('关闭WebSocket:', e);
+                }
+            }
+            
+            // 停止音频流
+            if (mediaStream) {
+                try {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                    mediaStream = null;
+                } catch (e) {
+                    console.log('停止媒体流:', e);
+                }
+            }
+
+            // 断开音频处理节点
+            if (scriptProcessor) {
+                try {
+                    scriptProcessor.disconnect();
+                    scriptProcessor = null;
+                } catch (e) {
+                    console.log('断开处理器:', e);
+                }
+            }
+            
+            // 关闭 AudioContext
+            if (audioContext) {
+                try {
+                    audioContext.close();
+                    audioContext = null;
+                } catch (e) {
+                    console.log('关闭AudioContext:', e);
+                }
+            }
+            
+            // 停止翻译定时器
+            stopTranslationTimer();
+            
+            // 取消正在进行的请求
+            if (ongoingRequest) {
+                try {
+                    ongoingRequest.abort();
+                    ongoingRequest = null;
+                } catch (e) {
+                    console.log('取消请求:', e);
+                }
+            }
+            
+            // 重置状态
+            sessionId = null;
+            
+            // 更新 UI
+            updateStatus('stopped', '已停止');
+            startBtn.style.display = 'inline-block';
+            stopBtn.style.display = 'none';
+            recordingIndicator.classList.remove('active');
+            startBtn.disabled = false;
+        }
+
+        // 开始识别
+        async function startRecognition() {
+            const elevenlabsKey = elevenlabsKeyInput.value.trim();
+            const openaiKey = openaiKeyInput.value.trim();
+
+            if (!elevenlabsKey) {
+                showError('请输入 ElevenLabs API Key');
+                return;
+            }
+
+            if (!openaiKey) {
+                showError('请输入 OpenAI API Key');
+                return;
+            }
+
+            try {
+                startBtn.disabled = true;
+                updateStatus('processing', '正在初始化...');
+
+                // 获取麦克风权限
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 16000,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    } 
+                });
+
+                // 初始化 WebSocket
+                await initWebSocket(elevenlabsKey);
+
+                // 开始音频流传输
+                startAudioStreaming(mediaStream);
+
+                // 创建第一个结果卡片
+                currentResultId = Date.now();
+                currentSegmentText = '';
+                addResult(currentResultId, '', '等待翻译...');
+
+                // 开始定时翻译
+                startTranslationTimer();
+
+                // 更新状态
+                isRecognizing = true;
+                updateStatus('listening', '🎤 正在监听...');
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'inline-block';
+                recordingIndicator.classList.add('active');
+
+            } catch (error) {
+                console.error('启动失败:', error);
+                showError(`启动失败: ${error.message}`);
+                completeShutdown();
+            }
+        }
+
+        // 初始化 WebSocket 连接
+        async function initWebSocket(apiKey) {
+            return new Promise((resolve, reject) => {
+                try {
+                    // 构建 WebSocket URL
+                    const languageCode = languageCodeSelect.value;
+                    let wsUrl = `wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000`;
+                    
+                    if (languageCode) {
+                        wsUrl += `&language_code=${languageCode}`;
+                    }
+
+                    // 注意：浏览器 WebSocket API 不支持自定义 header
+                    // 需要通过其他方式传递 API key，这里我们使用 query parameter
+                    // 但 ElevenLabs 要求使用 header 或 token，所以我们需要先获取 token
+                    
+                    // 直接尝试连接（在实际使用中，可能需要先获取 signed URL）
+                    websocket = new WebSocket(wsUrl);
+
+                    websocket.onopen = () => {
+                        console.log('WebSocket 已连接');
+                        
+                        // 发送 API key（如果 API 支持通过消息发送）
+                        // 注意：实际的 ElevenLabs API 可能需要不同的认证方式
+                        // 这里假设需要在连接后发送认证信息
+                        try {
+                            websocket.send(JSON.stringify({
+                                message_type: 'authenticate',
+                                api_key: apiKey
+                            }));
+                        } catch (e) {
+                            console.log('认证消息发送失败（API 可能不需要）:', e);
+                        }
+                        
+                        resolve();
+                    };
+
+                    websocket.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            console.log('收到消息:', data);
+
+                            if (data.message_type === 'session_started') {
+                                sessionId = data.session_id;
+                                console.log('会话已开始:', sessionId);
+                                console.log('会话配置:', data.config);
+                            } else if (data.message_type === 'partial_transcript') {
+                                // 临时结果（实时显示）
+                                const transcript = data.text || '';
+                                console.log('临时:', transcript);
+                                updateResultOriginal(currentResultId, currentSegmentText + transcript);
+                            } else if (data.message_type === 'committed_transcript') {
+                                // 最终结果
+                                const transcript = data.text || '';
+                                console.log('最终:', transcript);
+
+                                currentSegmentText += transcript + ' ';
+                                updateResultOriginal(currentResultId, currentSegmentText);
+
+                                // 检查是否需要创建新段落
+                                if (currentSegmentText.length >= MAX_CHARS_PER_SEGMENT) {
+                                    console.log('达到长度限制，创建新段落');
+                                    createNewSegment();
+                                }
+                            } else if (data.message_type === 'committed_transcript_with_timestamps') {
+                                // 带时间戳的最终结果
+                                const transcript = data.text || '';
+                                console.log('最终(带时间戳):', transcript);
+
+                                currentSegmentText += transcript + ' ';
+                                updateResultOriginal(currentResultId, currentSegmentText);
+
+                                if (currentSegmentText.length >= MAX_CHARS_PER_SEGMENT) {
+                                    createNewSegment();
+                                }
+                            } else if (data.message_type && data.message_type.toLowerCase().includes('error')) {
+                                console.error('API 错误:', data);
+                                showError(`ElevenLabs 错误 (${data.message_type}): ${data.message || data.error_message || '未知错误'}`);
+                            }
+                        } catch (e) {
+                            console.error('解析消息失败:', e, event.data);
+                        }
+                    };
+
+                    websocket.onerror = (error) => {
+                        console.error('WebSocket 错误:', error);
+                        showError('连接错误，请检查 API Key 和网络连接\n\n注意：ElevenLabs Speech-to-Text API 需要有效的 API Key 和权限');
+                        reject(error);
+                    };
+
+                    websocket.onclose = (event) => {
+                        console.log('WebSocket 已关闭', event.code, event.reason);
+                        if (isRecognizing) {
+                            updateStatus('stopped', '连接已断开');
+                            if (event.code === 1002 || event.code === 1008) {
+                                showError('认证失败，请检查 API Key 是否正确\n\n提示：确保您的 ElevenLabs 账户有 Speech-to-Text API 的访问权限');
+                            }
+                        }
+                    };
+
+                    // 设置超时
+                    setTimeout(() => {
+                        if (websocket.readyState !== WebSocket.OPEN) {
+                            reject(new Error('WebSocket 连接超时'));
+                        }
+                    }, 10000);
+
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        }
+
+        // 开始音频流传输
+        function startAudioStreaming(stream) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: 16000
+            });
+
+            const source = audioContext.createMediaStreamSource(stream);
+            scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(audioContext.destination);
+
+            scriptProcessor.onaudioprocess = (e) => {
+                if (websocket && websocket.readyState === WebSocket.OPEN && isRecognizing) {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const pcmData = convertFloat32ToInt16(inputData);
+                    
+                    // 发送音频数据到 ElevenLabs Speech-to-Text API
+                    const base64Audio = arrayBufferToBase64(pcmData);
+                    
+                    try {
+                        websocket.send(JSON.stringify({
+                            message_type: 'input_audio_chunk',
+                            audio_base_64: base64Audio,
+                            sample_rate: 16000
+                        }));
+                    } catch (e) {
+                        console.error('发送音频数据失败:', e);
+                    }
+                }
+            };
+        }
+
+        // 转换音频格式：Float32 -> Int16 PCM
+        function convertFloat32ToInt16(buffer) {
+            const l = buffer.length;
+            const buf = new Int16Array(l);
+            for (let i = 0; i < l; i++) {
+                const s = Math.max(-1, Math.min(1, buffer[i]));
+                buf[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            return buf.buffer;
+        }
+
+        // 转换为 Base64
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        // 创建新段落
+        function createNewSegment() {
+            // 翻译当前段落
+            if (currentSegmentText.trim()) {
+                translateText(currentSegmentText, currentResultId);
+            }
+
+            // 创建新卡片
+            currentResultId = Date.now();
+            addResult(currentResultId, '', '等待翻译...');
+            currentSegmentText = '';
+        }
+
+        // 定时翻译
+        function startTranslationTimer() {
+            const interval = parseInt(translateIntervalSelect.value) * 1000;
+            
+            translationTimer = setInterval(() => {
+                if (currentSegmentText.trim() && isRecognizing) {
+                    console.log('定时翻译，文本长度:', currentSegmentText.length);
+                    translateText(currentSegmentText, currentResultId);
+                }
+            }, interval);
+        }
+
+        function stopTranslationTimer() {
+            if (translationTimer) {
+                clearInterval(translationTimer);
+                translationTimer = null;
+            }
+        }
+
+        // 翻译文本
+        async function translateText(text, resultId) {
+            const openaiKey = openaiKeyInput.value.trim();
+            
+            if (!openaiKey || !isRecognizing) {
+                return;
+            }
+
+            try {
+                const controller = new AbortController();
+                ongoingRequest = controller;
+                
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${openaiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o',
+                        messages: [
+                            {
+                                role: 'system',
+                                content: '你是一个专业的翻译助手。请将用户输入的文本翻译成中文。只返回翻译结果，不要添加任何解释或前缀。如果输入已经是中文，请翻译成英文。'
+                            },
+                            {
+                                role: 'user',
+                                content: text
+                            }
+                        ],
+                        temperature: 0.3,
+                        max_tokens: 2000
+                    }),
+                    signal: controller.signal
+                });
+
+                ongoingRequest = null;
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error?.message || '翻译失败');
+                }
+
+                const data = await response.json();
+                const translation = data.choices[0].message.content.trim();
+                
+                updateResultTranslation(resultId, translation);
+                
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    return;
+                }
+                console.error('翻译错误:', error);
+                showError(`翻译失败: ${error.message}`);
+            }
+        }
+
+        // UI 函数
+        function addResult(id, original, translation) {
+            const resultItem = document.createElement('div');
+            resultItem.className = 'result-item';
+            resultItem.id = `result-${id}`;
+            resultItem.innerHTML = `
+                <div class="result-original">
+                    <div class="result-label">原文</div>
+                    <div class="result-text" id="original-${id}">${escapeHtml(original) || '<span style="color: #999;">等待语音输入...</span>'}</div>
+                </div>
+                <div class="result-translation">
+                    <div class="result-label">译文</div>
+                    <div class="result-text pulse" id="translation-${id}">${escapeHtml(translation)}</div>
+                </div>
+            `;
+            resultsDiv.insertBefore(resultItem, resultsDiv.firstChild);
+        }
+
+        function updateResultOriginal(id, original) {
+            const el = document.getElementById(`original-${id}`);
+            if (el) el.innerHTML = escapeHtml(original) || '<span style="color: #999;">等待语音输入...</span>';
+        }
+
+        function updateResultTranslation(id, translation) {
+            const el = document.getElementById(`translation-${id}`);
+            if (el) {
+                el.className = 'result-text';
+                el.innerHTML = escapeHtml(translation);
+            }
+        }
+
+        function updateStatus(type, message) {
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            resultsDiv.insertBefore(errorDiv, resultsDiv.firstChild);
+            setTimeout(() => errorDiv.remove(), 8000);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 按钮事件
+        startBtn.addEventListener('click', () => {
+            startRecognition();
+        });
+
+        stopBtn.addEventListener('click', () => {
+            console.log('用户点击停止');
+            completeShutdown();
+        });
+
+        // 页面卸载时清理
+        window.addEventListener('beforeunload', () => {
+            completeShutdown();
+        });
+    </script>
+</body>
+</html>
