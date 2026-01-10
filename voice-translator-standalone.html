@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPT-4o 实时语音翻译</title>
+    <title>实时语音翻译 - Whisper + GPT-4o</title>
     <style>
         * {
             margin: 0;
@@ -290,16 +290,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎤 GPT-4o 实时语音翻译</h1>
-        <div class="subtitle">使用 GPT-4o 进行语音识别和翻译</div>
-        
-        <div class="notice">
-            <strong>⚠️ 使用提示：</strong>
-            如果遇到麦克风权限问题，请确保：
-            <br>1. 使用 Chrome 或 Edge 浏览器
-            <br>2. 允许浏览器访问麦克风（点击地址栏的图标设置权限）
-            <br>3. 如果仍无法使用，请尝试将此文件放到本地服务器运行
-        </div>
+        <h1>🎤 实时语音翻译</h1>
+        <div class="subtitle">Whisper 语音识别 + GPT-4o 翻译</div>
         
         <div class="settings">
             <div class="input-group">
@@ -459,7 +451,7 @@
                 return;
             }
 
-            updateStatus('processing', '🤖 GPT-4o 处理中...');
+            updateStatus('processing', '🤖 识别和翻译中...');
 
             try {
                 // 转换为 base64
@@ -492,34 +484,64 @@
             });
         }
 
-        // 调用 GPT-4o API 进行语音识别和翻译
+        // 调用 Whisper API 进行语音识别，然后用 GPT-4o 翻译
         async function transcribeAndTranslate(base64Audio, apiKey) {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            // 第一步：将 base64 转换为 Blob
+            const byteCharacters = atob(base64Audio);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const audioBlob = new Blob([byteArray], { type: 'audio/webm' });
+
+            // 第二步：使用 Whisper API 识别语音
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'audio.webm');
+            formData.append('model', 'whisper-1');
+            formData.append('language', 'auto'); // 自动检测语言
+
+            const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: formData
+            });
+
+            if (!whisperResponse.ok) {
+                const error = await whisperResponse.json();
+                throw new Error(error.error?.message || 'Whisper API请求失败');
+            }
+
+            const whisperData = await whisperResponse.json();
+            const originalText = whisperData.text.trim();
+
+            // 如果没有识别到内容，返回空
+            if (!originalText) {
+                return {
+                    original: '',
+                    translation: ''
+                };
+            }
+
+            // 第三步：使用 GPT-4o 翻译成中文
+            const translateResponse = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
-                    model: 'gpt-4o-audio-preview',
-                    modalities: ['text', 'audio'],
-                    audio: { voice: 'alloy', format: 'wav' },
+                    model: 'gpt-4o',
                     messages: [
                         {
+                            role: 'system',
+                            content: '你是一个专业的翻译助手。请将用户输入的文本翻译成中文。只返回翻译结果，不要添加任何解释或前缀。'
+                        },
+                        {
                             role: 'user',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: '请识别这段音频中的语音内容，并提供中英双语结果。请严格按照以下JSON格式返回，不要添加任何其他内容：\n{"original": "原文内容", "translation": "中文翻译"}\n如果音频中没有有效语音，请返回：{"original": "", "translation": ""}'
-                                },
-                                {
-                                    type: 'input_audio',
-                                    input_audio: {
-                                        data: base64Audio,
-                                        format: 'wav'
-                                    }
-                                }
-                            ]
+                            content: originalText
                         }
                     ],
                     temperature: 0.3,
@@ -527,30 +549,18 @@
                 })
             });
 
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error?.message || 'API请求失败');
+            if (!translateResponse.ok) {
+                const error = await translateResponse.json();
+                throw new Error(error.error?.message || '翻译API请求失败');
             }
 
-            const data = await response.json();
-            const content = data.choices[0].message.content.trim();
-            
-            // 解析JSON响应
-            try {
-                // 移除可能的markdown代码块标记
-                const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim();
-                const result = JSON.parse(cleanContent);
-                return {
-                    original: result.original || '',
-                    translation: result.translation || ''
-                };
-            } catch (e) {
-                console.error('JSON解析失败:', content);
-                return {
-                    original: content,
-                    translation: '解析失败'
-                };
-            }
+            const translateData = await translateResponse.json();
+            const translation = translateData.choices[0].message.content.trim();
+
+            return {
+                original: originalText,
+                translation: translation
+            };
         }
 
         // 添加结果到页面
