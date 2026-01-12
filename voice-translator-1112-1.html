@@ -79,6 +79,7 @@
             min-height: 200px;
             max-height: 300px;
             overflow-y: auto;
+            scroll-behavior: smooth; /* 平滑滚动 */
         }
         .live-transcript-label {
             font-size: 14px;
@@ -484,7 +485,11 @@
             if (text.trim()) {
                 els.liveTranscript.textContent = text;
                 els.liveTranscript.classList.remove('empty');
-                els.liveTranscript.scrollTop = els.liveTranscript.scrollHeight;
+                
+                // 使用 requestAnimationFrame 确保 DOM 更新后再滚动
+                requestAnimationFrame(() => {
+                    els.liveTranscript.scrollTop = els.liveTranscript.scrollHeight;
+                });
             } else {
                 els.liveTranscript.textContent = '等待语音输入...';
                 els.liveTranscript.classList.add('empty');
