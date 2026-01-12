@@ -353,11 +353,13 @@
                 const url = `wss://api.elevenlabs.io/v1/realtime_scribe/speech_to_text?access_token=${token}${lang ? `&language=${lang}` : ''}`;
                 
                 console.log('WebSocket URL:', url.replace(token, 'TOKEN'));
+                console.log('语言设置:', lang || '自动检测');
                 
                 websocket = new WebSocket(url);
                 
                 websocket.onopen = () => {
-                    console.log('WebSocket 已连接');
+                    console.log('✅ WebSocket 已连接');
+                    updateStatus('listening', '🎤 等待会话开始...');
                     resolve();
                     startAudio(stream);
                 };
@@ -365,44 +367,59 @@
                 websocket.onmessage = (e) => {
                     try {
                         const d = JSON.parse(e.data);
-                        console.log('收到消息:', d.message_type, d);
+                        console.log('📨 收到消息:', d.message_type);
                         
                         if (d.message_type === 'session_started') {
                             sessionId = d.session_id;
-                            console.log('会话已开始:', sessionId);
+                            console.log('✅ 会话已开始:', sessionId);
                             updateStatus('listening', '🎤 监听中...');
                         } else if (d.message_type === 'partial_transcript') {
-                            updateLiveTranscript(accumulatedTranscript + (d.text || ''));
+                            const text = d.text || '';
+                            console.log('📝 临时转录:', text.substring(0, 30));
+                            updateLiveTranscript(accumulatedTranscript + text);
                         } else if (d.message_type === 'committed_transcript' || d.message_type === 'committed_transcript_with_timestamps') {
-                            accumulatedTranscript += (d.text || '') + ' ';
+                            const text = d.text || '';
+                            console.log('✅ 最终转录:', text);
+                            accumulatedTranscript += text + ' ';
                             updateLiveTranscript(accumulatedTranscript);
                         } else if (d.message_type && d.message_type.includes('error')) {
-                            console.error('ElevenLabs 错误:', d);
+                            console.error('❌ ElevenLabs 错误:', d);
                             showError(`错误: ${d.message || d.error || JSON.stringify(d)}`);
+                        } else {
+                            console.log('ℹ️ 其他消息:', d);
                         }
                     } catch (err) {
-                        console.error('解析消息失败:', err, e.data);
+                        console.error('❌ 解析消息失败:', err, e.data);
                     }
                 };
                 
                 websocket.onerror = (e) => { 
-                    console.error('WebSocket 错误:', e); 
-                    showError('连接错误，请检查 API Key'); 
+                    console.error('❌ WebSocket 错误:', e); 
+                    showError('WebSocket连接错误，请检查网络'); 
                     reject(e); 
                 };
                 
                 websocket.onclose = (event) => {
-                    console.log('WebSocket 关闭:', event.code, event.reason);
+                    console.log('⚠️ WebSocket 关闭 - 代码:', event.code, '原因:', event.reason || '无');
                     if (isRecognizing) {
                         updateStatus('stopped', '已断开');
-                        showError(`连接断开: ${event.code} - ${event.reason || '未知原因'}`);
+                        let reason = '';
+                        switch(event.code) {
+                            case 1000: reason = '正常关闭'; break;
+                            case 1001: reason = '端点离开'; break;
+                            case 1006: reason = '连接异常关闭（可能是 token 问题）'; break;
+                            case 1008: reason = '违反策略'; break;
+                            case 1011: reason = '服务器错误'; break;
+                            default: reason = event.reason || '未知原因';
+                        }
+                        showError(`连接断开 [${event.code}]: ${reason}`);
                     }
                 };
                 
                 setTimeout(() => {
-                    if (websocket.readyState !== WebSocket.OPEN) {
-                        console.error('连接超时');
-                        reject(new Error('连接超时'));
+                    if (websocket && websocket.readyState !== WebSocket.OPEN) {
+                        console.error('❌ 连接超时');
+                        reject(new Error('连接超时 (10秒)'));
                     }
                 }, 10000);
             });
@@ -414,6 +431,8 @@
             scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
             source.connect(scriptProcessor);
             scriptProcessor.connect(audioContext.destination);
+            
+            console.log('音频处理器已启动');
             
             scriptProcessor.onaudioprocess = (e) => {
                 if (websocket?.readyState === WebSocket.OPEN && isRecognizing) {
@@ -427,11 +446,15 @@
                     let binary = '';
                     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
                     
-                    websocket.send(JSON.stringify({
-                        message_type: 'input_audio_chunk',
-                        audio_base_64: btoa(binary),
-                        sample_rate: 16000
-                    }));
+                    try {
+                        websocket.send(JSON.stringify({
+                            message_type: 'input_audio_chunk',
+                            audio_base_64: btoa(binary),
+                            sample_rate: 16000
+                        }));
+                    } catch (err) {
+                        console.error('发送音频失败:', err);
+                    }
                 }
             };
         }
