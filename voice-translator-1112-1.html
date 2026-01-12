@@ -276,12 +276,38 @@
         document.addEventListener('visibilitychange', () => document.hidden && isRecognizing && completeShutdown());
 
         async function getToken(apiKey) {
-            const res = await fetch('https://api.elevenlabs.io/v1/single-use-token/realtime_scribe', {
-                method: 'POST',
-                headers: { 'xi-api-key': apiKey }
-            });
-            if (!res.ok) throw new Error('获取token失败');
-            return (await res.json()).token;
+            try {
+                console.log('正在获取 ElevenLabs token...');
+                const res = await fetch('https://api.elevenlabs.io/v1/single-use-token/realtime_scribe', {
+                    method: 'POST',
+                    headers: { 
+                        'xi-api-key': apiKey,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('Token响应状态:', res.status);
+                
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    console.error('Token错误响应:', errorText);
+                    let errorMsg = '获取token失败';
+                    try {
+                        const errorJson = JSON.parse(errorText);
+                        errorMsg = errorJson.detail?.message || errorJson.message || errorText;
+                    } catch (e) {
+                        errorMsg = errorText || `HTTP ${res.status}`;
+                    }
+                    throw new Error(errorMsg);
+                }
+                
+                const data = await res.json();
+                console.log('Token获取成功');
+                return data.token;
+            } catch (error) {
+                console.error('获取token失败:', error);
+                throw error;
+            }
         }
 
         async function startRecognition() {
@@ -293,11 +319,15 @@
                 els.startBtn.disabled = true;
                 updateStatus('processing', '🔑 授权中...');
                 
+                console.log('开始获取token...');
                 const token = await getToken(els.elevenlabsKey.value.trim());
+                console.log('Token获取成功，请求麦克风权限...');
+                
                 mediaStream = await navigator.mediaDevices.getUserMedia({
                     audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
                 });
                 
+                console.log('麦克风权限已获取');
                 isRecognizing = true;
                 accumulatedTranscript = '';
                 els.startBtn.style.display = 'none';
@@ -305,9 +335,14 @@
                 els.recording.classList.add('active');
                 updateLiveTranscript('');
                 
+                console.log('连接 WebSocket...');
                 await connectWS(token, mediaStream);
             } catch (e) {
-                showError(e.name === 'NotAllowedError' ? '麦克风权限被拒绝' : e.message);
+                console.error('启动失败:', e);
+                const msg = e.name === 'NotAllowedError' 
+                    ? '麦克风权限被拒绝' 
+                    : (e.message || '启动失败');
+                showError(msg);
                 completeShutdown();
             }
         }
@@ -317,26 +352,59 @@
                 const lang = els.languageCode.value;
                 const url = `wss://api.elevenlabs.io/v1/realtime_scribe/speech_to_text?access_token=${token}${lang ? `&language=${lang}` : ''}`;
                 
+                console.log('WebSocket URL:', url.replace(token, 'TOKEN'));
+                
                 websocket = new WebSocket(url);
+                
                 websocket.onopen = () => {
+                    console.log('WebSocket 已连接');
                     resolve();
                     startAudio(stream);
                 };
+                
                 websocket.onmessage = (e) => {
-                    const d = JSON.parse(e.data);
-                    if (d.message_type === 'session_started') {
-                        sessionId = d.session_id;
-                        updateStatus('listening', '🎤 监听中...');
-                    } else if (d.message_type === 'partial_transcript') {
-                        updateLiveTranscript(accumulatedTranscript + (d.text || ''));
-                    } else if (d.message_type === 'committed_transcript' || d.message_type === 'committed_transcript_with_timestamps') {
-                        accumulatedTranscript += (d.text || '') + ' ';
-                        updateLiveTranscript(accumulatedTranscript);
+                    try {
+                        const d = JSON.parse(e.data);
+                        console.log('收到消息:', d.message_type, d);
+                        
+                        if (d.message_type === 'session_started') {
+                            sessionId = d.session_id;
+                            console.log('会话已开始:', sessionId);
+                            updateStatus('listening', '🎤 监听中...');
+                        } else if (d.message_type === 'partial_transcript') {
+                            updateLiveTranscript(accumulatedTranscript + (d.text || ''));
+                        } else if (d.message_type === 'committed_transcript' || d.message_type === 'committed_transcript_with_timestamps') {
+                            accumulatedTranscript += (d.text || '') + ' ';
+                            updateLiveTranscript(accumulatedTranscript);
+                        } else if (d.message_type && d.message_type.includes('error')) {
+                            console.error('ElevenLabs 错误:', d);
+                            showError(`错误: ${d.message || d.error || JSON.stringify(d)}`);
+                        }
+                    } catch (err) {
+                        console.error('解析消息失败:', err, e.data);
                     }
                 };
-                websocket.onerror = (e) => { showError('连接错误'); reject(e); };
-                websocket.onclose = () => isRecognizing && updateStatus('stopped', '已断开');
-                setTimeout(() => websocket.readyState !== WebSocket.OPEN && reject(new Error('超时')), 10000);
+                
+                websocket.onerror = (e) => { 
+                    console.error('WebSocket 错误:', e); 
+                    showError('连接错误，请检查 API Key'); 
+                    reject(e); 
+                };
+                
+                websocket.onclose = (event) => {
+                    console.log('WebSocket 关闭:', event.code, event.reason);
+                    if (isRecognizing) {
+                        updateStatus('stopped', '已断开');
+                        showError(`连接断开: ${event.code} - ${event.reason || '未知原因'}`);
+                    }
+                };
+                
+                setTimeout(() => {
+                    if (websocket.readyState !== WebSocket.OPEN) {
+                        console.error('连接超时');
+                        reject(new Error('连接超时'));
+                    }
+                }, 10000);
             });
         }
 
